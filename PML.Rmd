@@ -1,0 +1,159 @@
+---
+title: "PML"
+author: "Ankur"
+date: "22/10/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+getwd()
+setwd("C:/Users/ankur/Documents")
+
+```
+#SETUP
+
+## Due to sample of the training sample Parallel Processing was implemented
+```{r}
+
+library(doParallel)
+suppressWarnings(suppressMessages(library(caret)))
+suppressWarnings(suppressMessages(library(randomForest)))
+suppressWarnings(suppressMessages(library(e1071)))
+set.seed(0007)
+
+```
+
+# INPUT
+
+## Download source data
+```{r}
+trainingFilename   <- 'pml-training.csv'
+quizFilename       <- 'pml-testing.csv'
+trainingUrl        <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'
+quizUrl            <- 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv'
+
+```
+
+## Data Cleansing
+
+### Remove NA and Blank Values with na.strings parameter
+```{r}
+Training_1     <-read.csv(trainingFilename, na.strings=c("NA","","#DIV/0!"))
+Training_1     <-Training_1[,colSums(is.na(Training_1)) == 0]
+dim(Training_1)
+
+```
+
+```{r}
+quiz.df         <-read.csv(quizFilename , na.strings=c("NA", "", "#DIV/0!"))
+quiz.df         <-quiz.df[,colSums(is.na(quiz.df)) == 0]
+dim(quiz.df)
+
+```
+## Reduce the number of variables
+```{r}
+Training_1   <-Training_1[,-c(1:7)]
+Quiz.df <-quiz.df[,-c(1:7)]
+dim(Training_1)
+
+```
+## Check for near zero values in training data
+```{r}
+
+Training.nzv<-nzv(Training_1[,-ncol(Training_1)],saveMetrics=TRUE)
+
+```
+## Display and count variables submitted for the train function
+```{r}
+
+rownames(Training.nzv)
+
+dim(Training.nzv)[1]
+
+```
+# ALGORITHM
+
+## Partition the training data into a training set and a testing/validation set
+```{r}
+
+inTrain     <- createDataPartition(Training_1$classe, p = 0.6, list = FALSE)
+inTraining  <- Training_1[inTrain,]
+in_test      <- Training_1[-inTrain,]
+dim(inTraining);dim(in_test)
+
+```
+## Construct the model using cross validation
+```{r}
+
+myModelFilename <- "myModel.RData"
+if (!file.exists(myModelFilename)) {
+
+    # Parallel cores  
+    #require(parallel)
+    library(doParallel)
+    ncores <- makeCluster(detectCores() - 1)
+    registerDoParallel(cores=ncores)
+    getDoParWorkers() # 3    
+    
+    # use Random Forest method with Cross Validation, 4 folds
+    myModel <- train(classe ~ .
+                , data = inTraining
+                , method = "rf"
+                , metric = "Accuracy"  # categorical outcome variable so choose accuracy
+                , preProcess=c("center", "scale") # attempt to improve accuracy by normalising
+                , trControl=trainControl(method = "cv"
+                                        , number = 4 # folds of the training data
+                                        , p= 0.60
+                                        , allowParallel = TRUE 
+#                                       , seeds=NA # don't let workers set seed 
+                                        )
+                )
+
+    save(myModel, file = "myModel.RData")
+    # 3:42 .. 3:49 without preProcess
+    # 3:51 .. 3:58 with preProcess
+    stopCluster(ncores)
+} else {
+    # Use cached model  
+    load(file = myModelFilename, verbose = TRUE)
+}
+
+```
+
+```{r}
+
+print(myModel, digits=4)
+
+```
+# PREDICT
+```{r}
+
+predTest <- predict(myModel, newdata=in_test)
+
+```
+## Out of Sample Error
+### Accuracy is .9963 and this figure lies within the 95% confidence interval
+
+# FINAL MODEL DATA
+
+```{r}
+
+myModel$finalModel
+
+```
+
+```{r}
+
+varImp(myModel)
+
+```
+# VALIDATION
+```{r}
+
+print(predict(myModel, newdata=Quiz.df))
+
+```
+
